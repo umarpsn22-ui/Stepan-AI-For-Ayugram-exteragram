@@ -27,6 +27,7 @@ except Exception:
 try:
     from android.content import Intent
     from android.net import Uri
+    from android.speech import SpeechRecognizer, RecognizerIntent
     from android.app import Dialog
     from org.telegram.messenger import ApplicationLoader
 except Exception:
@@ -82,6 +83,10 @@ try:
 except Exception:
     Theme = None
 try:
+    from org.telegram.messenger import R
+except Exception:
+    R = None
+try:
     from com.exteragram.messenger.plugins.ui import PluginSettingsActivity
 except Exception:
     PluginSettingsActivity = None
@@ -116,7 +121,7 @@ __id__ = "gemini_search"
 __name__ = "Stepan AI?"
 __description__ = "ну встроенный ИИ Stepan AI дальше хз"
 __author__ = "@stepanbandera1"
-__version__ = "7.5.32"
+__version__ = "7.5.33"
 __app_version__ = ">=12.5.1"
 __sdk_version__ = ">=1.4.3.3"
 __icon__ = "IkonkiDlyaPlaginov/1"
@@ -1507,6 +1512,112 @@ class GeminiSearch(BasePlugin):
             return info.get("description_en", info.get("description", ""))
         value = info.get("description", "")
         return self._tr(value) if lang == "uk" else value
+
+    def _ai_icon_res(self, *needles):
+        """Find a suitable AyuGram drawable without hard-coding a resource name."""
+        try:
+            if R is None or not hasattr(R, "drawable"):
+                return 0
+            names = [str(x).lower() for x in needles if x]
+            for name in dir(R.drawable):
+                low = str(name).lower()
+                if any(n in low for n in names):
+                    try:
+                        return int(getattr(R.drawable, name))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return 0
+
+    def _set_ai_icon(self, view, *needles):
+        try:
+            res_id = self._ai_icon_res(*needles)
+            if res_id and view is not None:
+                view.setCompoundDrawablesWithIntrinsicBounds(res_id, 0, 0, 0)
+                try:
+                    view.setCompoundDrawablePadding(8)
+                except Exception:
+                    pass
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _start_ai_voice_input(self, on_result):
+        """Start Android speech recognition and return the recognized text."""
+        try:
+            if SpeechRecognizer is None or jclass is None or dynamic_proxy is None:
+                return False
+            activity = getattr(self, "_ai_chat_activity", None)
+            if activity is None:
+                activity = getattr(self, "_ai_chat_dialog_host", None)
+            if activity is None:
+                return False
+            if not SpeechRecognizer.isRecognitionAvailable(activity):
+                return False
+            recognizer = SpeechRecognizer.createSpeechRecognizer(activity)
+            Listener = jclass("android.speech.RecognitionListener")
+            class VoiceListener:
+                def onReadyForSpeech(self, params): pass
+                def onBeginningOfSpeech(self): pass
+                def onRmsChanged(self, rmsdB): pass
+                def onBufferReceived(self, buffer): pass
+                def onEndOfSpeech(self): pass
+                def onError(self, error):
+                    try: recognizer.destroy()
+                    except Exception: pass
+                def onResults(self, results):
+                    try:
+                        values = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        if values and len(values) > 0 and on_result:
+                            on_result(str(values.get(0)))
+                    except Exception as e:
+                        log("Stepan AI voice result error: %r" % e)
+                    finally:
+                        try: recognizer.destroy()
+                        except Exception: pass
+                def onPartialResults(self, results): pass
+                def onEvent(self, eventType, params): pass
+            recognizer.setRecognitionListener(dynamic_proxy(Listener, VoiceListener()))
+            intent = Intent("android.speech.action.RECOGNIZE_SPEECH")
+            intent.putExtra("android.speech.extra.LANGUAGE_MODEL", "free_form")
+            intent.putExtra("android.speech.extra.LANGUAGE", {"ru":"ru-RU", "uk":"uk-UA", "en":"en-US"}.get(self._language(), "ru-RU"))
+            intent.putExtra("android.speech.extra.PARTIAL_RESULTS", False)
+            recognizer.startListening(intent)
+            return True
+        except Exception as e:
+            log("Stepan AI voice start error: %r" % e)
+            return False
+
+    def _rename_ai_chat(self, chat_id, new_name):
+        try:
+            new_name = str(new_name or "").strip()
+            if not new_name:
+                return False
+            chats = self._load_ai_chats()
+            chat = chats.get(str(chat_id))
+            if chat is None:
+                return False
+            chat["title"] = new_name
+            self._save_ai_chats(chats)
+            return True
+        except Exception as e:
+            log("Stepan AI rename chat error: %r" % e)
+            return False
+
+    def _delete_ai_chat(self, chat_id):
+        try:
+            chats = self._load_ai_chats()
+            key = str(chat_id)
+            if key not in chats:
+                return False
+            del chats[key]
+            self._save_ai_chats(chats)
+            return True
+        except Exception as e:
+            log("Stepan AI delete chat error: %r" % e)
+            return False
 
     def _language(self):
         value = str(self.get_setting(self.LANGUAGE_KEY, "ru") or "ru").lower()
