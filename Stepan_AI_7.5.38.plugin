@@ -6639,12 +6639,7 @@ class GeminiSearch(BasePlugin):
                 icon="msg_bot", accent=True,
                 on_click=lambda view: self._open_telegram_username("TheLazyyy"),
             ),
-            Text(
-                text="@TheLazyyy",
-                subtext=self._tr("Бета-тестер"),
-                icon="msg_bot", accent=True,
-                on_click=lambda view: self._open_telegram_username("TheLazyyy"),
-            ),
+
             Header(text=self._tr("💙 Отдельное спасибо")),
             Text(
                 text="@ampliation",
