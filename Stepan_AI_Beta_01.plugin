@@ -70,7 +70,7 @@ try:
 except Exception:
     find_class = None
 try:
-    from android.view import Gravity, View, Window, WindowManager
+    from android.view import Gravity, View, Window, WindowManager, MotionEvent
     from android.graphics import BitmapFactory
     from android.graphics.drawable import GradientDrawable, ColorDrawable
     from android.view.inputmethod import EditorInfo
@@ -121,7 +121,7 @@ __id__ = "gemini_search"
 __name__ = "Stepan AI?"
 __description__ = "ну встроенный ИИ Stepan AI дальше хз"
 __author__ = "@stepanbandera1"
-__version__ = "7.5.33"
+__version__ = "7.5.34"
 __app_version__ = ">=12.5.1"
 __sdk_version__ = ">=1.4.3.3"
 __icon__ = "IkonkiDlyaPlaginov/1"
@@ -1529,6 +1529,26 @@ class GeminiSearch(BasePlugin):
         except Exception:
             pass
         return 0
+
+    def _set_ai_long_click_listener(self, view, callback):
+        try:
+            if view is None or dynamic_proxy is None or jclass is None:
+                return False
+            cls = jclass("android.view.View$OnLongClickListener")
+            class LongClick(dynamic_proxy(cls)):
+                def onLongClick(self, v):
+                    try:
+                        callback(v)
+                    except Exception as e:
+                        log("Stepan AI long click error: %r" % e)
+                    return True
+            listener = LongClick()
+            view.setOnLongClickListener(listener)
+            self._retain_ai_java_ref(listener)
+            return True
+        except Exception as e:
+            self._file_log("long click listener failed: %s" % e)
+            return False
 
     def _set_ai_icon(self, view, *needles):
         try:
@@ -5224,6 +5244,94 @@ class GeminiSearch(BasePlugin):
         except Exception as e:
             self._file_log("provider key dialog failed: %s" % e)
 
+    def _show_ai_chat_row_actions(self, context, chat_id, row=None, title=None, close_drawer=None):
+        try:
+            threads, active, current = self._active_thread()
+            target = None
+            for item in threads:
+                if str(item.get("id")) == str(chat_id):
+                    target = item
+                    break
+            if target is None:
+                return
+            current_title = str(target.get("title") or title or self._tr("Новый чат"))
+            builder = AlertDialogBuilder(context)
+            builder.set_title(current_title)
+            items = [self._tr("Переименовать"), self._tr("Удалить чат")]
+            def choose(dialog, which):
+                try:
+                    idx = int(which)
+                except Exception:
+                    idx = -1
+                if idx == 0:
+                    self._rename_ai_chat_dialog(context, chat_id, row, current_title)
+                elif idx == 1:
+                    self._delete_ai_chat_by_id(chat_id, close_drawer)
+            if hasattr(builder, "set_items"):
+                builder.set_items(items, choose)
+            else:
+                builder.setItems(items, choose)
+            run_on_ui_thread(builder.show)
+        except Exception as e:
+            self._file_log("chat row actions failed: %s" % e)
+
+    def _rename_ai_chat_dialog(self, context, chat_id, row=None, old_title=""):
+        try:
+            builder = AlertDialogBuilder(context)
+            field = EditText(context)
+            field.setSingleLine(True)
+            field.setText(str(old_title or ""))
+            field.setSelectAllOnFocus(True)
+            field.setHint(self._tr("Название чата"))
+            if hasattr(builder, "set_view"):
+                builder.set_view(field)
+            else:
+                builder.setView(field)
+            builder.set_title(self._tr("Переименовать чат"))
+            def save_name(dialog=None, which=None):
+                try:
+                    name = field.getText().toString().strip()
+                    if not name:
+                        return
+                    if self._rename_ai_chat(chat_id, name):
+                        if row is not None:
+                            try:
+                                row.setText(("●  " if str(chat_id) == str(getattr(self, "_ai_chat_current_id", "")) else "    ") + name[:44])
+                            except Exception:
+                                pass
+                        refresh = getattr(self, "_ai_chat_refresh", None)
+                        if refresh:
+                            run_on_ui_thread(refresh)
+                except Exception as e:
+                    self._file_log("rename chat dialog save failed: %s" % e)
+            builder.set_positive_button(self._tr("Сохранить"), save_name)
+            builder.set_negative_button(self._tr("Отмена"), None)
+            run_on_ui_thread(builder.show)
+        except Exception as e:
+            self._file_log("rename chat dialog failed: %s" % e)
+
+    def _delete_ai_chat_by_id(self, chat_id, close_drawer=None):
+        try:
+            threads, active, current = self._active_thread()
+            key = str(chat_id)
+            remaining = [x for x in threads if str(x.get("id")) != key]
+            if not remaining:
+                now = int(time.time())
+                remaining = [{"id": self._chat_id(), "title": self._tr("Новый чат"), "messages": [], "created_at": now, "updated_at": now}]
+            new_active = str(active)
+            if key == str(active) or not any(str(x.get("id")) == new_active for x in remaining):
+                new_active = str(remaining[-1].get("id"))
+            self._clear_ai_chat_pending(chat_id=chat_id)
+            self._save_ai_threads(remaining, new_active)
+            self._ai_chat_current_id = new_active
+            refresh = getattr(self, "_ai_chat_refresh", None)
+            if refresh:
+                run_on_ui_thread(refresh)
+            if close_drawer:
+                close_drawer()
+        except Exception as e:
+            self._file_log("delete chat by id failed: %s" % e)
+
     def _build_chat_drawer(self, context, root, switch_chat, new_chat, close_drawer):
         try:
             from org.telegram.messenger import AndroidUtilities
@@ -5314,6 +5422,13 @@ class GeminiSearch(BasePlugin):
                 row.setBackground(row_bg)
             list_box.addView(row, LinearLayout.LayoutParams(-1, dp(44)))
             self._set_view_click_listener(row, lambda v, cid=item["id"]: switch_chat(cid))
+            self._set_ai_long_click_listener(
+                row,
+                lambda v, cid=item["id"], r=row, t=title: self._show_ai_chat_row_actions(
+                    context, cid, r, t, close_drawer
+                )
+            )
+            self._set_ai_icon(row, "chat", "message", "bubble")
             rows.append((row, title.lower()))
 
         def filter_rows(view=None):
@@ -5402,6 +5517,7 @@ class GeminiSearch(BasePlugin):
 
     def _build_ai_chat_view(self, context):
         activity = context
+        self._ai_chat_activity = activity
         threads, active_id, active_thread = self._active_thread()
         if active_thread is None:
             active_thread = self._new_ai_chat()
@@ -5444,8 +5560,42 @@ class GeminiSearch(BasePlugin):
             root.setClickable(True)
             if dynamic_proxy is not None and jclass is not None:
                 touch_cls = jclass("android.view.View$OnTouchListener")
+                swipe_state = {"x": 0.0, "y": 0.0, "tracking": False}
+                def _open_drawer_from_swipe():
+                    try:
+                        drawer = getattr(self, "_ai_chat_swipe_drawer_holder", {}).get("view")
+                        if drawer is not None:
+                            drawer.setVisibility(View.VISIBLE)
+                            drawer.setTranslationX(-float(getattr(self, "_ai_chat_drawer_width", dp(310))))
+                            drawer.animate().translationX(0.0).setDuration(220).start()
+                        scrim = getattr(self, "_ai_chat_swipe_scrim_holder", {}).get("view")
+                        if scrim is not None:
+                            scrim.setClickable(True)
+                            scrim.setVisibility(View.VISIBLE)
+                    except Exception:
+                        pass
                 class RootTouchListener(dynamic_proxy(touch_cls)):
                     def onTouch(self, view, event):
+                        try:
+                            action = int(event.getActionMasked())
+                            x = float(event.getX())
+                            y = float(event.getY())
+                            if action == 0:
+                                swipe_state["x"] = x
+                                swipe_state["y"] = y
+                                swipe_state["tracking"] = x <= float(dp(72))
+                                return False
+                            if action == 1 and swipe_state["tracking"]:
+                                dx = x - swipe_state["x"]
+                                dy = y - swipe_state["y"]
+                                swipe_state["tracking"] = False
+                                if dx >= float(dp(90)) and abs(dx) > abs(dy) * 1.2:
+                                    _open_drawer_from_swipe()
+                                    return True
+                            elif action == 3:
+                                swipe_state["tracking"] = False
+                        except Exception:
+                            swipe_state["tracking"] = False
                         return False
                 root_touch_listener = RootTouchListener()
                 root.setOnTouchListener(root_touch_listener)
@@ -5613,24 +5763,43 @@ class GeminiSearch(BasePlugin):
             pass
         input_card.addView(editor, LinearLayout.LayoutParams(0, -2, 1.0))
 
+        mic_button = TextView(activity)
+        mic_button.setText("🎙")
+        mic_button.setTextSize(18)
+        mic_button.setGravity(Gravity.CENTER if Gravity is not None else 17)
+        mic_button.setTextColor(self._int32(0xFFEDEDED))
+        mic_button.setContentDescription(self._tr("Голосовой ввод"))
+        mic_button.setBackground(self._rounded_background(0xFF454545, 21, stroke_color=0x301FFFFF, stroke_dp=1))
+        input_card.addView(mic_button, LinearLayout.LayoutParams(dp(44), dp(44)))
+
         send_button = TextView(activity)
-        send_button.setText("🎙")
+        send_button.setText("➤")
         send_button.setTextSize(19)
         send_button.setGravity(Gravity.CENTER if Gravity is not None else 17)
         send_button.setTextColor(self._int32(0xFFEDEDED))
-        send_button.setContentDescription(self._tr("Голосовой ввод / Отправить"))
+        send_button.setContentDescription(self._tr("Отправить"))
         send_button.setBackground(self._rounded_background(0xFF454545, 21, stroke_color=0x301FFFFF, stroke_dp=1))
         input_card.addView(send_button, LinearLayout.LayoutParams(dp(44), dp(44)))
+        self._set_ai_icon(mic_button, "mic", "microphone", "voice")
+        self._set_ai_icon(send_button, "send", "arrow_up", "arrowup")
         main.addView(input_card, LinearLayout.LayoutParams(-1, dp(60)))
 
         def update_send_button(view=None):
             try:
-                has_text = bool(str(editor.getText() or "").strip())
-                send_button.setText("➤" if has_text else "🎙")
-                send_button.setTextSize(19 if has_text else 18)
-                send_button.setContentDescription(self._tr("Отправить") if has_text else self._tr("Голосовой ввод"))
+                send_button.setContentDescription(self._tr("Отправить"))
             except Exception:
                 pass
+
+        def start_voice(view=None):
+            try:
+                if not self._start_ai_voice_input(lambda text: run_on_ui_thread(lambda: (editor.setText(text), editor.setSelection(len(text))))):
+                    try:
+                        Toast.makeText(activity, self._tr("Голосовой ввод недоступен"), Toast.LENGTH_SHORT).show()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        self._set_view_click_listener(mic_button, start_voice)
 
         try:
             if dynamic_proxy is not None and jclass is not None:
@@ -5797,9 +5966,11 @@ class GeminiSearch(BasePlugin):
             except Exception:
                 pass
             scrim_holder["view"] = scrim
+            self._ai_chat_swipe_scrim_holder = scrim_holder
             root.addView(scrim, FrameLayout.LayoutParams(-1, -1))
             drawer = self._build_chat_drawer(activity, root, switch_chat, new_chat, close_drawer)
             drawer_holder["view"] = drawer
+            self._ai_chat_swipe_drawer_holder = drawer_holder
             drawer.setTranslationX(-float(getattr(self, "_ai_chat_drawer_width", dp(310))))
             root.addView(drawer, FrameLayout.LayoutParams(dp(310), -1, Gravity.LEFT))
             self._set_view_click_listener(scrim, lambda v: close_drawer())
