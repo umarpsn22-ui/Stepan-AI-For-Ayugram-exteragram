@@ -121,7 +121,7 @@ __id__ = "gemini_search"
 __name__ = "Stepan AI?"
 __description__ = "ну встроенный ИИ Stepan AI дальше хз"
 __author__ = "@stepanbandera1"
-__version__ = "7.5.36"
+__version__ = "7.5.37"
 __app_version__ = ">=12.5.1"
 __sdk_version__ = ">=1.4.3.3"
 __icon__ = "IkonkiDlyaPlaginov/1"
@@ -1514,25 +1514,68 @@ class GeminiSearch(BasePlugin):
         return self._tr(value) if lang == "uk" else value
 
     def _ai_icon_res(self, *needles):
-        """Resolve one semantic drawable without unrelated arrow/send matches."""
+        """Resolve a drawable by meaning, prioritising AyuGram/Telegram semantic names."""
         try:
             if R is None or not hasattr(R, "drawable"):
                 return 0
-            names = [str(x).strip().lower() for x in needles if x]
-            if not names:
+            requested = [str(x).strip().lower() for x in needles if x]
+            if not requested:
                 return 0
+
             role = "generic"
-            if any(x in ("mic", "microphone", "voice") for x in names):
+            if any(x in ("mic", "microphone", "voice", "record_voice", "voice_input") for x in requested):
                 role = "mic"
-            elif any(x in ("send", "arrow_up", "arrowup") for x in names):
+            elif any(x in ("send", "msg_send", "arrow_up", "arrowup", "plane", "paper_plane", "icon_plane") for x in requested):
                 role = "send"
-            elif any(x in ("attach", "paperclip", "file", "add", "plus") for x in names):
+            elif any(x in ("attach", "paperclip", "paper_clip", "clip", "file", "attachment", "msg_attach") for x in requested):
                 role = "attach"
-            forbidden = {
-                "mic": ("arrow", "send", "up", "down", "forward", "next"),
-                "send": ("mic", "microphone", "voice", "record"),
-                "attach": ("mic", "microphone", "voice"),
+            elif any(x in ("menu", "sidebar", "hamburger", "navigation") for x in requested):
+                role = "sidebar"
+            elif any(x in ("more", "overflow", "dots", "menu_more") for x in requested):
+                role = "more"
+            elif any(x in ("add", "plus", "new", "create") for x in requested):
+                role = "add"
+            elif any(x in ("close", "cancel", "cross", "clear") for x in requested):
+                role = "close"
+
+            preferred = {
+                # Voice input must never resolve to an arrow/send drawable.
+                "mic": (
+                    "msg_mic", "mic", "microphone", "voice_input",
+                    "record_voice", "ic_mic", "ic_microphone",
+                ),
+                # Sending: real send/plane icon first; arrows are last-resort aliases only.
+                "send": (
+                    "msg_send", "send", "send_message", "paper_plane",
+                    "plane", "icon_plane", "telegram_send",
+                ),
+                # Attachment: paperclip first. "+" is handled by the caller only when none exists.
+                "attach": (
+                    "msg_attach", "attach", "attachment", "paperclip",
+                    "paper_clip", "clip", "file_attach",
+                ),
+                "sidebar": ("menu", "hamburger", "navigation", "sidebar", "msg_menu"),
+                "more": ("more", "menu_more", "overflow", "dots", "more_vert"),
+                "add": ("add", "plus", "new", "create", "ic_chatlist_add_2"),
+                "close": ("close", "cancel", "cross", "clear"),
             }.get(role, ())
+
+            forbidden = {
+                "mic": ("arrow", "send", "up", "down", "forward", "next", "plane"),
+                "send": ("mic", "microphone", "voice", "record"),
+                "attach": ("mic", "microphone", "voice", "record"),
+                "sidebar": ("send", "mic", "microphone", "voice"),
+                "more": ("send", "mic", "microphone", "voice"),
+                "add": ("send", "mic", "microphone", "voice"),
+                "close": (),
+            }.get(role, ())
+
+            # Preferred aliases are ranked first, then the caller's aliases.
+            names = []
+            for value in list(preferred) + requested:
+                if value and value not in names:
+                    names.append(value)
+
             candidates = []
             for raw_name in dir(R.drawable):
                 name = str(raw_name).lower()
@@ -1542,19 +1585,32 @@ class GeminiSearch(BasePlugin):
                     res_id = int(getattr(R.drawable, raw_name))
                 except Exception:
                     continue
+
                 score = 0
                 for idx, needle in enumerate(names):
                     variants = (
-                        needle, "ic_" + needle, "msg_" + needle,
-                        needle + "_solar", needle + "_remix",
-                        "ic_" + needle + "_solar", "ic_" + needle + "_remix",
+                        needle,
+                        "ic_" + needle,
+                        "msg_" + needle,
+                        needle + "_solar",
+                        needle + "_remix",
+                        "ic_" + needle + "_solar",
+                        "ic_" + needle + "_remix",
+                        "msg_" + needle + "_solar",
+                        "msg_" + needle + "_remix",
                     )
                     if name in variants:
-                        score = max(score, 12000 - idx * 100)
-                    elif name.startswith(needle + "_") or name.startswith("ic_" + needle + "_") or name.startswith("msg_" + needle + "_"):
-                        score = max(score, 7000 - idx * 100)
+                        score = max(score, 30000 - idx * 250)
+                    elif (
+                        name.startswith(needle + "_")
+                        or name.startswith("ic_" + needle + "_")
+                        or name.startswith("msg_" + needle + "_")
+                    ):
+                        score = max(score, 12000 - idx * 120)
+
                 if score:
                     candidates.append((score, name, res_id))
+
             if not candidates:
                 return 0
             candidates.sort(key=lambda item: (-item[0], item[1]))
@@ -5889,7 +5945,11 @@ class GeminiSearch(BasePlugin):
         plus_button.setGravity(Gravity.CENTER if Gravity is not None else 17)
         plus_button.setTextColor(self._int32(0xFFE5E5E5))
         plus_button.setContentDescription(self._tr("Добавить фото или файл"))
-        self._set_ai_icon(plus_button, "paperclip", "attach", "file")
+        if not self._set_ai_icon(plus_button, "paperclip", "attach", "attachment", "clip", "file"):
+             try:
+                 plus_button.setText("＋")
+             except Exception:
+                 pass
         plus_button.setBackground(self._rounded_background(0x001F1F1F, 19, stroke_color=0x001FFFFFF, stroke_dp=0))
         input_card.addView(plus_button, LinearLayout.LayoutParams(dp(42), dp(44)))
 
@@ -5928,16 +5988,16 @@ class GeminiSearch(BasePlugin):
         send_button.setContentDescription(self._tr("Отправить"))
         send_button.setBackground(self._rounded_background(0xFF454545, 21, stroke_color=0x301FFFFF, stroke_dp=1))
         input_card.addView(send_button, LinearLayout.LayoutParams(dp(44), dp(44)))
-        mic_icon_ok = self._set_ai_icon(mic_button, "mic", "microphone", "voice")
+        mic_icon_ok = self._set_ai_icon(mic_button, "msg_mic", "mic", "microphone", "voice", "voice_input")
         if not mic_icon_ok:
             try:
                 mic_button.setText("🎙")
             except Exception:
                 pass
-        send_icon_ok = self._set_ai_icon(send_button, "send", "arrow_up", "arrowup")
+        send_icon_ok = self._set_ai_icon(send_button, "msg_send", "send", "send_message", "paper_plane", "plane", "icon_plane")
         if not send_icon_ok:
             try:
-                send_button.setText("↑")
+                send_button.setText("➤")
             except Exception:
                 pass
         main.addView(input_card, LinearLayout.LayoutParams(-1, dp(60)))
