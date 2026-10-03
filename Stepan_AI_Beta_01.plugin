@@ -5945,11 +5945,12 @@ class GeminiSearch(BasePlugin):
         plus_button.setGravity(Gravity.CENTER if Gravity is not None else 17)
         plus_button.setTextColor(self._int32(0xFFE5E5E5))
         plus_button.setContentDescription(self._tr("Добавить фото или файл"))
-        if not self._set_ai_icon(plus_button, "msg_attach", "paperclip", "attach", "attachment", "clip", "file"):
-             try:
-                 plus_button.setText("＋")
-             except Exception:
-                 pass
+        attach_icon_ok = self._set_ai_icon(plus_button, "msg_attach", "paperclip", "paper_clip", "attach", "attachment", "clip", "file")
+        if not attach_icon_ok:
+            try:
+                plus_button.setText("+")
+            except Exception:
+                pass
         plus_button.setBackground(self._rounded_background(0x001F1F1F, 19, stroke_color=0x001FFFFFF, stroke_dp=0))
         input_card.addView(plus_button, LinearLayout.LayoutParams(dp(42), dp(44)))
 
@@ -5988,7 +5989,7 @@ class GeminiSearch(BasePlugin):
         send_button.setContentDescription(self._tr("Отправить"))
         send_button.setBackground(self._rounded_background(0xFF454545, 21, stroke_color=0x301FFFFF, stroke_dp=1))
         input_card.addView(send_button, LinearLayout.LayoutParams(dp(44), dp(44)))
-        mic_icon_ok = self._set_ai_icon(mic_button, "msg_mic", "microphone", "mic", "voice_input", "voice")
+        mic_icon_ok = self._set_ai_icon(mic_button, "msg_mic", "mic", "microphone", "voice_input", "voice", "record_voice")
         if not mic_icon_ok:
             try:
                 mic_button.setText("🎙")
