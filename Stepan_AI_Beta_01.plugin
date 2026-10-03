@@ -121,7 +121,7 @@ __id__ = "gemini_search"
 __name__ = "Stepan AI?"
 __description__ = "ну встроенный ИИ Stepan AI дальше хз"
 __author__ = "@stepanbandera1"
-__version__ = "7.5.39"
+__version__ = "7.5.40"
 __app_version__ = ">=12.5.1"
 __sdk_version__ = ">=1.4.3.3"
 __icon__ = "IkonkiDlyaPlaginov/1"
@@ -1546,17 +1546,17 @@ class GeminiSearch(BasePlugin):
                 ),
                 # Sending: real send/plane icon first; arrows are last-resort aliases only.
                 "send": (
-                    "msg_send", "send", "send_message", "paper_plane",
-                    "plane", "icon_plane", "telegram_send",
+                    "msg_send", "send_message", "send", "telegram_send",
+                    "paper_plane", "plane", "icon_plane",
                 ),
                 # Attachment: paperclip first. "+" is handled by the caller only when none exists.
                 "attach": (
-                    "msg_attach", "attach", "attachment", "paperclip",
-                    "paper_clip", "clip", "file_attach",
+                    "msg_attach", "paperclip", "paper_clip", "clip",
+                    "attachment", "attach", "file_attach",
                 ),
-                "sidebar": ("menu", "hamburger", "navigation", "sidebar", "msg_menu"),
-                "more": ("more", "menu_more", "overflow", "dots", "more_vert"),
-                "add": ("add", "plus", "new", "create", "ic_chatlist_add_2"),
+                "sidebar": ("msg_menu", "hamburger", "navigation", "sidebar", "menu"),
+                "more": ("more_vert", "menu_more", "overflow", "dots", "more"),
+                "add": ("ic_chatlist_add_2", "add", "plus", "new", "create"),
                 "close": ("close", "cancel", "cross", "clear"),
             }.get(role, ())
 
