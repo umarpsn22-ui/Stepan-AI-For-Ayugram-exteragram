@@ -121,7 +121,7 @@ __id__ = "gemini_search"
 __name__ = "Stepan AI?"
 __description__ = "ну встроенный ИИ Stepan AI дальше хз"
 __author__ = "@stepanbandera1"
-__version__ = "7.5.35"
+__version__ = "7.5.36"
 __app_version__ = ">=12.5.1"
 __sdk_version__ = ">=1.4.3.3"
 __icon__ = "IkonkiDlyaPlaginov/1"
@@ -1514,17 +1514,29 @@ class GeminiSearch(BasePlugin):
         return self._tr(value) if lang == "uk" else value
 
     def _ai_icon_res(self, *needles):
-        """Resolve AyuGram/Remix/Solar drawables with exact-match priority."""
+        """Resolve one semantic drawable without unrelated arrow/send matches."""
         try:
             if R is None or not hasattr(R, "drawable"):
                 return 0
             names = [str(x).strip().lower() for x in needles if x]
             if not names:
                 return 0
+            role = "generic"
+            if any(x in ("mic", "microphone", "voice") for x in names):
+                role = "mic"
+            elif any(x in ("send", "arrow_up", "arrowup") for x in names):
+                role = "send"
+            elif any(x in ("attach", "paperclip", "file", "add", "plus") for x in names):
+                role = "attach"
+            forbidden = {
+                "mic": ("arrow", "send", "up", "down", "forward", "next"),
+                "send": ("mic", "microphone", "voice", "record"),
+                "attach": ("mic", "microphone", "voice"),
+            }.get(role, ())
             candidates = []
             for raw_name in dir(R.drawable):
                 name = str(raw_name).lower()
-                if name.startswith("_"):
+                if name.startswith("_") or any(token in name for token in forbidden):
                     continue
                 try:
                     res_id = int(getattr(R.drawable, raw_name))
@@ -1533,20 +1545,14 @@ class GeminiSearch(BasePlugin):
                 score = 0
                 for idx, needle in enumerate(names):
                     variants = (
-                        needle,
-                        "ic_" + needle,
-                        "msg_" + needle,
-                        needle + "_solar",
-                        needle + "_remix",
-                        "ic_" + needle + "_solar",
-                        "ic_" + needle + "_remix",
+                        needle, "ic_" + needle, "msg_" + needle,
+                        needle + "_solar", needle + "_remix",
+                        "ic_" + needle + "_solar", "ic_" + needle + "_remix",
                     )
                     if name in variants:
-                        score = max(score, 10000 - idx * 50)
-                    elif name.startswith(needle):
-                        score = max(score, 5000 - idx * 50)
-                    elif needle in name:
-                        score = max(score, 1000 - idx * 25)
+                        score = max(score, 12000 - idx * 100)
+                    elif name.startswith(needle + "_") or name.startswith("ic_" + needle + "_") or name.startswith("msg_" + needle + "_"):
+                        score = max(score, 7000 - idx * 100)
                 if score:
                     candidates.append((score, name, res_id))
             if not candidates:
@@ -1679,9 +1685,14 @@ class GeminiSearch(BasePlugin):
         try:
             res_id = self._ai_icon_res(*needles)
             if res_id and view is not None:
+                try:
+                    if hasattr(view, "setText"):
+                        view.setText("")
+                except Exception:
+                    pass
                 view.setCompoundDrawablesWithIntrinsicBounds(res_id, 0, 0, 0)
                 try:
-                    view.setCompoundDrawablePadding(8)
+                    view.setCompoundDrawablePadding(0)
                 except Exception:
                     pass
                 return True
@@ -5741,6 +5752,7 @@ class GeminiSearch(BasePlugin):
                         return False
                 root_touch_listener = RootTouchListener()
                 root.setOnTouchListener(root_touch_listener)
+                self._ai_chat_root_touch_listener = root_touch_listener
                 self._retain_ai_java_ref(root_touch_listener)
             root.setFocusable(True)
             root.setFocusableInTouchMode(True)
@@ -5805,16 +5817,6 @@ class GeminiSearch(BasePlugin):
         title_box.addView(subtitle_view, LinearLayout.LayoutParams(-1, -2))
         header.addView(title_box, LinearLayout.LayoutParams(0, -2, 1.0))
         self._set_view_click_listener(title_box, lambda v: self._show_provider_selector_dialog(activity, subtitle_view))
-
-        new_chat_button = self._make_chat_header_button(activity, "+", None)
-        try:
-            new_chat_button.setTextSize(25)
-            new_chat_button.setTextColor(self._int32(0xFFE7E9ED))
-            new_chat_button.setContentDescription(self._tr("Новый чат"))
-        except Exception:
-            pass
-        self._set_ai_icon(new_chat_button, "add", "plus", "new")
-        header.addView(new_chat_button, LinearLayout.LayoutParams(dp(44), dp(42)))
 
         menu_button = self._make_chat_header_button(activity, "⋯", None)
         try:
@@ -5882,12 +5884,12 @@ class GeminiSearch(BasePlugin):
             input_card.setBackground(input_bg)
 
         plus_button = TextView(activity)
-        plus_button.setText("＋")
+        plus_button.setText("")
         plus_button.setTextSize(25)
         plus_button.setGravity(Gravity.CENTER if Gravity is not None else 17)
         plus_button.setTextColor(self._int32(0xFFE5E5E5))
         plus_button.setContentDescription(self._tr("Добавить фото или файл"))
-        self._set_ai_icon(plus_button, "attach", "paperclip", "file", "add")
+        self._set_ai_icon(plus_button, "paperclip", "attach", "file")
         plus_button.setBackground(self._rounded_background(0x001F1F1F, 19, stroke_color=0x001FFFFFF, stroke_dp=0))
         input_card.addView(plus_button, LinearLayout.LayoutParams(dp(42), dp(44)))
 
@@ -5910,7 +5912,7 @@ class GeminiSearch(BasePlugin):
         input_card.addView(editor, LinearLayout.LayoutParams(0, -2, 1.0))
 
         mic_button = TextView(activity)
-        mic_button.setText("🎙")
+        mic_button.setText("")
         mic_button.setTextSize(18)
         mic_button.setGravity(Gravity.CENTER if Gravity is not None else 17)
         mic_button.setTextColor(self._int32(0xFFEDEDED))
@@ -5919,15 +5921,25 @@ class GeminiSearch(BasePlugin):
         input_card.addView(mic_button, LinearLayout.LayoutParams(dp(44), dp(44)))
 
         send_button = TextView(activity)
-        send_button.setText("➤")
+        send_button.setText("")
         send_button.setTextSize(19)
         send_button.setGravity(Gravity.CENTER if Gravity is not None else 17)
         send_button.setTextColor(self._int32(0xFFEDEDED))
         send_button.setContentDescription(self._tr("Отправить"))
         send_button.setBackground(self._rounded_background(0xFF454545, 21, stroke_color=0x301FFFFF, stroke_dp=1))
         input_card.addView(send_button, LinearLayout.LayoutParams(dp(44), dp(44)))
-        self._set_ai_icon(mic_button, "mic", "microphone", "voice")
-        self._set_ai_icon(send_button, "send", "arrow_up", "arrowup")
+        mic_icon_ok = self._set_ai_icon(mic_button, "mic", "microphone", "voice")
+        if not mic_icon_ok:
+            try:
+                mic_button.setText("🎙")
+            except Exception:
+                pass
+        send_icon_ok = self._set_ai_icon(send_button, "send", "arrow_up", "arrowup")
+        if not send_icon_ok:
+            try:
+                send_button.setText("↑")
+            except Exception:
+                pass
         main.addView(input_card, LinearLayout.LayoutParams(-1, dp(60)))
 
         def update_send_button(view=None):
@@ -5982,6 +5994,16 @@ class GeminiSearch(BasePlugin):
             except Exception:
                 self._pick_ai_file(activity)
         self._set_view_click_listener(plus_button, open_attachment_menu)
+
+        # Attach the same edge-swipe listener to child surfaces so a swipe
+        # starting on the composer/message area can still open the drawer.
+        try:
+            swipe_listener = getattr(self, "_ai_chat_root_touch_listener", None)
+            for _swipe_view in (header, scroll, messages, input_card, editor, main):
+                if swipe_listener is not None and _swipe_view is not None:
+                    _swipe_view.setOnTouchListener(swipe_listener)
+        except Exception:
+            pass
 
         drawer_holder = {"view": None}
         scrim_holder = {"view": None}
@@ -6059,7 +6081,6 @@ class GeminiSearch(BasePlugin):
                 self._clear_ai_chat_from_view(messages, scroll)
 
         self._set_view_click_listener(menu_button, lambda v: self._show_ai_chat_tools(activity, new_chat, clear_current_chat))
-        self._set_view_click_listener(new_chat_button, lambda v: new_chat())
         
 
         def render_attachment():
