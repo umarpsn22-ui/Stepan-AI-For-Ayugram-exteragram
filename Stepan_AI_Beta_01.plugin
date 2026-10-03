@@ -121,7 +121,7 @@ __id__ = "gemini_search"
 __name__ = "Stepan AI?"
 __description__ = "ну встроенный ИИ Stepan AI дальше хз"
 __author__ = "@stepanbandera1"
-__version__ = "7.5.37"
+__version__ = "7.5.38"
 __app_version__ = ">=12.5.1"
 __sdk_version__ = ">=1.4.3.3"
 __icon__ = "IkonkiDlyaPlaginov/1"
@@ -5945,7 +5945,7 @@ class GeminiSearch(BasePlugin):
         plus_button.setGravity(Gravity.CENTER if Gravity is not None else 17)
         plus_button.setTextColor(self._int32(0xFFE5E5E5))
         plus_button.setContentDescription(self._tr("Добавить фото или файл"))
-        if not self._set_ai_icon(plus_button, "paperclip", "attach", "attachment", "clip", "file"):
+        if not self._set_ai_icon(plus_button, "msg_attach", "paperclip", "attach", "attachment", "clip", "file"):
              try:
                  plus_button.setText("＋")
              except Exception:
@@ -5988,13 +5988,13 @@ class GeminiSearch(BasePlugin):
         send_button.setContentDescription(self._tr("Отправить"))
         send_button.setBackground(self._rounded_background(0xFF454545, 21, stroke_color=0x301FFFFF, stroke_dp=1))
         input_card.addView(send_button, LinearLayout.LayoutParams(dp(44), dp(44)))
-        mic_icon_ok = self._set_ai_icon(mic_button, "msg_mic", "mic", "microphone", "voice", "voice_input")
+        mic_icon_ok = self._set_ai_icon(mic_button, "msg_mic", "microphone", "mic", "voice_input", "voice")
         if not mic_icon_ok:
             try:
                 mic_button.setText("🎙")
             except Exception:
                 pass
-        send_icon_ok = self._set_ai_icon(send_button, "msg_send", "send", "send_message", "paper_plane", "plane", "icon_plane")
+        send_icon_ok = self._set_ai_icon(send_button, "msg_send", "send_message", "paper_plane", "plane", "telegram_send")
         if not send_icon_ok:
             try:
                 send_button.setText("➤")
@@ -6632,6 +6632,12 @@ class GeminiSearch(BasePlugin):
                 subtext=self._tr("Бета-тестер · кодер"),
                 icon="msg_bot", accent=True,
                 on_click=lambda view: self._open_telegram_username("stepanhuerich"),
+            ),
+            Text(
+                text="@TheLazyyy",
+                subtext=self._tr("Бета-тестер"),
+                icon="msg_bot", accent=True,
+                on_click=lambda view: self._open_telegram_username("TheLazyyy"),
             ),
             Header(text=self._tr("💙 Отдельное спасибо")),
             Text(
