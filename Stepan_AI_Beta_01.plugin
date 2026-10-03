@@ -121,7 +121,7 @@ __id__ = "gemini_search"
 __name__ = "Stepan AI?"
 __description__ = "ну встроенный ИИ Stepan AI дальше хз"
 __author__ = "@stepanbandera1"
-__version__ = "7.5.34"
+__version__ = "7.5.35"
 __app_version__ = ">=12.5.1"
 __sdk_version__ = ">=1.4.3.3"
 __icon__ = "IkonkiDlyaPlaginov/1"
@@ -1514,21 +1514,146 @@ class GeminiSearch(BasePlugin):
         return self._tr(value) if lang == "uk" else value
 
     def _ai_icon_res(self, *needles):
-        """Find a suitable AyuGram drawable without hard-coding a resource name."""
+        """Resolve AyuGram/Remix/Solar drawables with exact-match priority."""
         try:
             if R is None or not hasattr(R, "drawable"):
                 return 0
-            names = [str(x).lower() for x in needles if x]
-            for name in dir(R.drawable):
-                low = str(name).lower()
-                if any(n in low for n in names):
-                    try:
-                        return int(getattr(R.drawable, name))
-                    except Exception:
-                        pass
+            names = [str(x).strip().lower() for x in needles if x]
+            if not names:
+                return 0
+            candidates = []
+            for raw_name in dir(R.drawable):
+                name = str(raw_name).lower()
+                if name.startswith("_"):
+                    continue
+                try:
+                    res_id = int(getattr(R.drawable, raw_name))
+                except Exception:
+                    continue
+                score = 0
+                for idx, needle in enumerate(names):
+                    variants = (
+                        needle,
+                        "ic_" + needle,
+                        "msg_" + needle,
+                        needle + "_solar",
+                        needle + "_remix",
+                        "ic_" + needle + "_solar",
+                        "ic_" + needle + "_remix",
+                    )
+                    if name in variants:
+                        score = max(score, 10000 - idx * 50)
+                    elif name.startswith(needle):
+                        score = max(score, 5000 - idx * 50)
+                    elif needle in name:
+                        score = max(score, 1000 - idx * 25)
+                if score:
+                    candidates.append((score, name, res_id))
+            if not candidates:
+                return 0
+            candidates.sort(key=lambda item: (-item[0], item[1]))
+            return candidates[0][2]
         except Exception:
-            pass
-        return 0
+            return 0
+
+    def _toggle_ai_chat_pin(self, chat_id):
+        try:
+            threads, active, thread = self._active_thread()
+            target = None
+            for item in threads:
+                if str(item.get("id")) == str(chat_id):
+                    target = item
+                    break
+            if target is None:
+                return False
+            target["pinned"] = not bool(target.get("pinned", False))
+            target["updated_at"] = int(time.time())
+            self._save_ai_threads(threads, active)
+            refresh = getattr(self, "_ai_chat_refresh", None)
+            if refresh:
+                run_on_ui_thread(refresh)
+            return bool(target["pinned"])
+        except Exception as e:
+            self._file_log("toggle chat pin failed: %s" % e)
+            return False
+
+    def _clear_ai_chat_by_id(self, chat_id):
+        try:
+            threads, active, thread = self._active_thread()
+            target = None
+            for item in threads:
+                if str(item.get("id")) == str(chat_id):
+                    target = item
+                    break
+            if target is None:
+                return False
+            target["messages"] = []
+            target["updated_at"] = int(time.time())
+            self._clear_ai_chat_pending(chat_id=chat_id)
+            self._save_ai_threads(threads, active)
+            refresh = getattr(self, "_ai_chat_refresh", None)
+            if refresh and str(active) == str(chat_id):
+                run_on_ui_thread(refresh)
+            return True
+        except Exception as e:
+            self._file_log("clear chat by id failed: %s" % e)
+            return False
+
+    def _copy_ai_current_chat(self):
+        try:
+            _, _, thread = self._active_thread()
+            if thread is None:
+                return False
+            lines = ["Stepan AI — " + str(thread.get("title") or self._tr("Новый чат")), ""]
+            for item in thread.get("messages", []):
+                if item.get("deleted"):
+                    continue
+                speaker = self._tr("Вы") if item.get("role") == "user" else "Stepan AI"
+                lines.append(speaker + ":")
+                lines.append(str(item.get("text") or "").strip())
+                lines.append("")
+            text_value = "\n".join(lines).strip()
+            if len(text_value) <= 20:
+                return False
+            self._copy_text(text_value, self._tr("Чат скопирован"))
+            return True
+        except Exception as e:
+            self._file_log("copy chat failed: %s" % e)
+            return False
+
+    def _show_ai_chat_tools(self, context, new_chat, clear_current):
+        try:
+            if AlertDialogBuilder is None:
+                return
+            builder = AlertDialogBuilder(context)
+            items = [
+                self._tr("＋ Новый чат"),
+                self._tr("🧹 Очистить текущий чат"),
+                self._tr("📋 Скопировать весь чат"),
+                self._tr("🗑 Удалить текущий чат"),
+            ]
+            def choose(dialog, which):
+                try:
+                    idx = int(which)
+                except Exception:
+                    idx = -1
+                if idx == 0:
+                    new_chat()
+                elif idx == 1:
+                    clear_current()
+                elif idx == 2:
+                    self._copy_ai_current_chat()
+                elif idx == 3:
+                    current_id = getattr(self, "_ai_chat_current_id", None)
+                    if current_id is not None:
+                        self._delete_ai_chat_by_id(current_id, None)
+            if hasattr(builder, "set_items"):
+                builder.set_items(items, choose)
+            else:
+                builder.setItems(items, choose)
+            run_on_ui_thread(builder.show)
+        except Exception as e:
+            self._file_log("AI chat tools menu failed: %s" % e)
 
     def _set_ai_long_click_listener(self, view, callback):
         try:
@@ -1727,7 +1852,7 @@ class GeminiSearch(BasePlugin):
         self._install_message_menu_item()
         self._install_ai_chat_menu_item()
         self._install_ai_file_picker_hook()
-        log("[GeminiSearch] Stepan AI 7.5.18 loaded")
+        log("[GeminiSearch] Stepan AI 7.5.35 loaded")
         self.add_on_send_message_hook()
 
     def on_plugin_unload(self):
@@ -5257,7 +5382,13 @@ class GeminiSearch(BasePlugin):
             current_title = str(target.get("title") or title or self._tr("Новый чат"))
             builder = AlertDialogBuilder(context)
             builder.set_title(current_title)
-            items = [self._tr("Переименовать"), self._tr("Удалить чат")]
+            is_pinned = bool(target.get("pinned", False))
+            items = [
+                self._tr("Переименовать"),
+                self._tr("Открепить чат") if is_pinned else self._tr("Закрепить чат"),
+                self._tr("Очистить историю"),
+                self._tr("Удалить чат"),
+            ]
             def choose(dialog, which):
                 try:
                     idx = int(which)
@@ -5266,6 +5397,10 @@ class GeminiSearch(BasePlugin):
                 if idx == 0:
                     self._rename_ai_chat_dialog(context, chat_id, row, current_title)
                 elif idx == 1:
+                    self._toggle_ai_chat_pin(chat_id)
+                elif idx == 2:
+                    self._clear_ai_chat_by_id(chat_id)
+                elif idx == 3:
                     self._delete_ai_chat_by_id(chat_id, close_drawer)
             if hasattr(builder, "set_items"):
                 builder.set_items(items, choose)
@@ -5363,6 +5498,7 @@ class GeminiSearch(BasePlugin):
         close.setGravity(Gravity.CENTER)
         close.setTextColor(self._int32(0xFFD0D0D0))
         close.setContentDescription(self._tr("Закрыть боковую панель"))
+        self._set_ai_icon(close, "close", "cancel", "cross", "clear")
         self._set_view_click_listener(close, lambda v: close_drawer())
         brand_row.addView(close, LinearLayout.LayoutParams(dp(42), dp(42)))
         drawer.addView(brand_row, LinearLayout.LayoutParams(-1, dp(48)))
@@ -5375,6 +5511,7 @@ class GeminiSearch(BasePlugin):
         create.setTextColor(self._int32(0xFFF4F4F4))
         create.setGravity(Gravity.CENTER_VERTICAL if Gravity is not None else 16)
         create.setPadding(dp(14), 0, dp(14), 0)
+        self._set_ai_icon(create, "add", "plus", "new")
         create_bg = self._rounded_background(0xFF2B2B2B, 14, stroke_color=0x401FFFFF, stroke_dp=1)
         if create_bg is not None:
             create.setBackground(create_bg)
@@ -5391,6 +5528,7 @@ class GeminiSearch(BasePlugin):
         search_box.setHintTextColor(self._int32(0xFF8B8B8B))
         search_box.setPadding(dp(12), 0, dp(12), 0)
         search_box.setBackground(self._rounded_background(0xFF212121, 12, stroke_color=0x301FFFFF, stroke_dp=1))
+        self._set_ai_icon(search_box, "search", "msg_search", "find")
         drawer.addView(search_box, LinearLayout.LayoutParams(-1, dp(44)))
 
         section = TextView(context)
@@ -5409,7 +5547,7 @@ class GeminiSearch(BasePlugin):
 
         rows = []
         threads, active, _ = self._active_thread()
-        for item in reversed(threads):
+        for item in sorted(threads, key=lambda x: (1 if x.get("pinned", False) else 0, int(x.get("updated_at", 0) or 0)), reverse=True):
             row = TextView(context)
             title = str(item.get("title") or self._tr("Новый чат"))
             row.setText(("●  " if item["id"] == active else "    ") + title[:44])
@@ -5429,6 +5567,8 @@ class GeminiSearch(BasePlugin):
                 )
             )
             self._set_ai_icon(row, "chat", "message", "bubble")
+            if item.get("pinned"):
+                self._set_ai_icon(row, "pin", "pinned", "pushpin", "bookmark")
             rows.append((row, title.lower()))
 
         def filter_rows(view=None):
@@ -5464,6 +5604,7 @@ class GeminiSearch(BasePlugin):
         settings_btn.setGravity(Gravity.CENTER_VERTICAL if Gravity is not None else 16)
         settings_btn.setPadding(dp(10), 0, dp(10), 0)
         settings_btn.setBackground(self._rounded_background(0x001F1F1F, 10, stroke_color=0x201FFFFF, stroke_dp=1))
+        self._set_ai_icon(settings_btn, "settings", "msg_settings", "gear")
         bottom.addView(settings_btn, LinearLayout.LayoutParams(0, dp(42), 1.0))
         self._set_view_click_listener(settings_btn, lambda v: (close_drawer(), self._open_plugin_settings_from_chat(context)))
 
@@ -5473,6 +5614,7 @@ class GeminiSearch(BasePlugin):
         delete_btn.setGravity(Gravity.CENTER)
         delete_btn.setTextColor(self._int32(0xFFE0A6A6))
         delete_btn.setContentDescription(self._tr("Удалить текущий чат"))
+        self._set_ai_icon(delete_btn, "delete", "msg_delete", "trash", "remove")
         delete_btn.setBackground(self._rounded_background(0x001F1F1F, 10, stroke_color=0x201FFFFF, stroke_dp=1))
         bottom.addView(delete_btn, LinearLayout.LayoutParams(dp(48), dp(42)))
 
@@ -5644,6 +5786,7 @@ class GeminiSearch(BasePlugin):
             sidebar_button.setContentDescription(self._tr("Открыть список чатов"))
         except Exception:
             pass
+        self._set_ai_icon(sidebar_button, "menu", "sidebar", "hamburger", "navigation")
         header.addView(sidebar_button, LinearLayout.LayoutParams(dp(46), dp(42)))
 
         title_box = LinearLayout(activity)
@@ -5670,6 +5813,7 @@ class GeminiSearch(BasePlugin):
             new_chat_button.setContentDescription(self._tr("Новый чат"))
         except Exception:
             pass
+        self._set_ai_icon(new_chat_button, "add", "plus", "new")
         header.addView(new_chat_button, LinearLayout.LayoutParams(dp(44), dp(42)))
 
         menu_button = self._make_chat_header_button(activity, "⋯", None)
@@ -5679,6 +5823,7 @@ class GeminiSearch(BasePlugin):
             menu_button.setContentDescription(self._tr("Меню чата"))
         except Exception:
             pass
+        self._set_ai_icon(menu_button, "more", "menu_more", "overflow", "dots")
         header.addView(menu_button, LinearLayout.LayoutParams(dp(44), dp(42)))
         main.addView(header, LinearLayout.LayoutParams(-1, -2))
 
@@ -5742,6 +5887,7 @@ class GeminiSearch(BasePlugin):
         plus_button.setGravity(Gravity.CENTER if Gravity is not None else 17)
         plus_button.setTextColor(self._int32(0xFFE5E5E5))
         plus_button.setContentDescription(self._tr("Добавить фото или файл"))
+        self._set_ai_icon(plus_button, "attach", "paperclip", "file", "add")
         plus_button.setBackground(self._rounded_background(0x001F1F1F, 19, stroke_color=0x001FFFFFF, stroke_dp=0))
         input_card.addView(plus_button, LinearLayout.LayoutParams(dp(42), dp(44)))
 
@@ -5904,7 +6050,15 @@ class GeminiSearch(BasePlugin):
                 pass
 
         self._set_view_click_listener(sidebar_button, open_drawer)
-        self._set_view_click_listener(menu_button, open_drawer)
+
+        def clear_current_chat():
+            current_id = getattr(self, "_ai_chat_current_id", None)
+            if current_id is not None:
+                self._clear_ai_chat_by_id(current_id)
+            else:
+                self._clear_ai_chat_from_view(messages, scroll)
+
+        self._set_view_click_listener(menu_button, lambda v: self._show_ai_chat_tools(activity, new_chat, clear_current_chat))
         self._set_view_click_listener(new_chat_button, lambda v: new_chat())
         
 
@@ -7960,6 +8114,25 @@ GeminiSearch.UK_TRANSLATIONS.update({
 })
 
 plugin = GeminiSearch()
+
+GeminiSearch.FINAL_EN_TRANSLATIONS.update({
+    "Закрепить чат": "Pin chat",
+    "Открепить чат": "Unpin chat",
+    "Очистить историю": "Clear history",
+    "🧹 Очистить текущий чат": "🧹 Clear current chat",
+    "📋 Скопировать весь чат": "📋 Copy entire chat",
+    "🗑 Удалить текущий чат": "🗑 Delete current chat",
+    "Чат скопирован": "Chat copied",
+})
+GeminiSearch.UK_TRANSLATIONS.update({
+    "Закрепить чат": "Закріпити чат",
+    "Открепить чат": "Відкріпити чат",
+    "Очистить историю": "Очистити історію",
+    "🧹 Очистить текущий чат": "🧹 Очистити поточний чат",
+    "📋 Скопировать весь чат": "📋 Скопіювати весь чат",
+    "🗑 Удалить текущий чат": "🗑 Видалити поточний чат",
+    "Чат скопирован": "Чат скопійовано",
+})
 
 GeminiSearch.FINAL_EN_TRANSLATIONS.update({
     "Прямая ссылка на изображение. Можно также выбрать обои из галереи.": "Direct image URL. You can also choose wallpaper from the gallery.",
