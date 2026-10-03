@@ -5994,7 +5994,7 @@ class GeminiSearch(BasePlugin):
                 mic_button.setText("🎙")
             except Exception:
                 pass
-        send_icon_ok = self._set_ai_icon(send_button, "msg_send", "send_message", "paper_plane", "plane", "telegram_send")
+        send_icon_ok = self._set_ai_icon(send_button, "msg_send", "send", "send_message", "paper_plane", "plane", "icon_plane", "telegram_send")
         if not send_icon_ok:
             try:
                 send_button.setText("➤")
@@ -6632,6 +6632,12 @@ class GeminiSearch(BasePlugin):
                 subtext=self._tr("Бета-тестер · кодер"),
                 icon="msg_bot", accent=True,
                 on_click=lambda view: self._open_telegram_username("stepanhuerich"),
+            ),
+            Text(
+                text="@TheLazyyy",
+                subtext=self._tr("Бета-тестер"),
+                icon="msg_bot", accent=True,
+                on_click=lambda view: self._open_telegram_username("TheLazyyy"),
             ),
             Text(
                 text="@TheLazyyy",
