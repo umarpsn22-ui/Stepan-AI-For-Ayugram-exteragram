@@ -2155,7 +2155,7 @@ class GeminiSearch(BasePlugin):
                 tts_listener = dynamic_proxy(init_cls, InitListener())
                 self._retain_ai_java_ref(tts_listener)
                 # Create TTS after the dialog exists; this is more reliable on older Android builds.
-            self._voice_chat_tts = TextToSpeech(activity, tts_listener)
+                self._voice_chat_tts = TextToSpeech(activity, tts_listener)
             except Exception as e:
                 self._file_log("voice chat TTS creation failed: %s" % e)
                 self._voice_chat_status(self._tr("⚠️ TTS недоступен"))
