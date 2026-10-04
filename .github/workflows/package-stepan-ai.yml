@@ -1,0 +1,26 @@
+name: Package Stepan AI plugin
+
+on:
+  push:
+    branches:
+      - stepan-ai-7.5.38-voicechat-fix
+    paths:
+      - "Stepan_AI_7.5.38_VoiceChat_Fixed.plugin"
+      - ".github/workflows/package-stepan-ai.yml"
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Python syntax
+        run: python3 -m py_compile Stepan_AI_7.5.38_VoiceChat_Fixed.plugin
+      - name: Prepare artifact
+        run: |
+          mkdir -p dist
+          cp Stepan_AI_7.5.38_VoiceChat_Fixed.plugin dist/
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stepan_AI_7.5.38_VoiceChat_Fixed
+          path: dist/Stepan_AI_7.5.38_VoiceChat_Fixed.plugin
