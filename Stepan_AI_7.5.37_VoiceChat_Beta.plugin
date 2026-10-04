@@ -2142,7 +2142,7 @@ class GeminiSearch(BasePlugin):
                     def onInit(self, result):
                         try:
                             if int(result) == 0:
-                                plugin._voice_chat_tts = TextToSpeech(activity, None)
+                                plugin._voice_chat_status(plugin._tr("🎙 Слушаю…"))
                                 plugin._voice_chat_start_listening()
                             else:
                                 plugin._voice_chat_status(plugin._tr("⚠️ Голосовой синтез недоступен"))
@@ -2150,6 +2150,7 @@ class GeminiSearch(BasePlugin):
                         except Exception as e:
                             plugin._file_log("voice chat TTS init failed: %s" % e)
                 tts_listener = dynamic_proxy(init_cls, InitListener())
+                self._retain_ai_java_ref(tts_listener)
                 self._voice_chat_tts = TextToSpeech(activity, tts_listener)
             except Exception as e:
                 self._file_log("voice chat TTS creation failed: %s" % e)
